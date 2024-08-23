@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" 
+    rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" 
+    crossorigin="anonymous">
+    <link rel="stylesheet" href="static/index.css">
+    <title>Мои задачи</title>
+    <style>
+        .no-underline {
+            text-decoration: none;
+            color: inherit; 
+        }
+        .no-underline:hover {
+            color: inherit; 
+        }
+    </style>
+</head>
+
+<body class="text-white bg-dark">
+    <div class="container">
+        <div class="row justify-content-between align-items-center">
+            <div class="zadachi col-auto custom-text fs-1 fs-md-2 fs-lg-3">
+                <a href="index.html" class="no-underline">Мои задачи</a>
+            </div>
+            <div class="col-auto fs-1 fs-md-2 fs-lg-3">
+                <a href="create.html" class="no-underline">+Создать</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div id="task-list">
+            {% if tasks %}
+                {% for task in tasks %}
+                    <div class="task mb-4" data-task-id="{{ task.task_id }}">
+                        <div class="d-flex flex-column flex-sm-row justify-content-between">
+                            <div class="h4 h5-sm h4-md">
+                                <a href="/tasks/{{ task.task_id }}" class="task-name" style="cursor: pointer; text-decoration: none;">
+                                    <strong>{{ task.heading }}</strong>
+                                </a><br>
+                                <span class="task-description d-none">{{ task.task_text }}</span>
+                            </div>
+                            <div class="d-flex flex-column flex-sm-row">
+                                <a href="/edit/{{ task.task_id }}" class="task-name" style="cursor: pointer; text-decoration: none;">
+                                    <span class="h4 h5-sm h4-md mb-2 mb-sm-0 me-sm-3 ms-sm-3 edit-task text-info">Редактировать</span>
+                                </a>
+                                <span class="h4 h5-sm h4-md mb-2 mb-sm-0 me-sm-3 ms-sm-3 delete-task text-danger" 
+                                      style="cursor: pointer;" data-task-id="{{ task.task_id }}" 
+                                      data-task-title="{{ task.heading }}" data-bs-toggle="modal" data-bs-target="#deleteModal">Удалить</span>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <h2 class="mt-5">У вас пока нет задач!</h2>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Модальное окно для удаления задачи -->
+    <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" style="color: white;">
+                    Вы уверены, что хотите удалить задачу <strong id="delete-task-title"></strong>?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" id="confirm-delete-btn" class="btn btn-danger">Удалить</button>
+                </div>
+            </div>
+        </div>
+    </div>    
+
+    <script src="static/delete.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>    
+    
+</body>
+</html>
