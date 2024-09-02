@@ -2,10 +2,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, HTMLResponse
 from starlette.templating import Jinja2Templates
 from sqlalchemy.future import select
-from starlette.authentication import requires
 from .models import Task, User
-from .auth import verify_password, get_password_hash, create_access_token
 from .database import SessionLocal
+from starlette.responses import RedirectResponse
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -19,14 +18,17 @@ async def regis_page(request: Request):
     return templates.TemplateResponse("regis.html", {"request": request})
 
 async def LK_page(request: Request):
-    user_id = request.user.username  # получаем user_id из авторизованного пользователя
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return RedirectResponse(url="/auth.html", status_code=302)
+
     async with SessionLocal() as session:
         async with session.begin():
             results = await session.execute(
                 select(Task).filter(Task.user_id == user_id)
             )
             tasks = results.scalars().all()
-    
+
     return templates.TemplateResponse("LK.html", {"request": request, "tasks": tasks})
 
 async def create_page(request: Request):
@@ -38,53 +40,14 @@ async def show_page(request: Request):
 async def edit_page(request: Request):
     return templates.TemplateResponse("edit.html", {"request": request})
 
-async def registration(request: Request):
-    form = await request.form()
-    login = form.get("login")
-    password = form.get("password")
-
-    async with SessionLocal() as session:
-        async with session.begin():
-            result = await session.execute(
-                select(User).filter(User.login == login)
-            )
-            existing_user = result.scalars().first()
-
-            if existing_user:
-                return templates.TemplateResponse("regis.html", {"request": request, "error": "Пользователь с таким логином уже зарегистрирован!"})
-
-            user = User(login=login, password=get_password_hash(password))
-            session.add(user)
-            await session.commit()
-
-    return RedirectResponse(url="/index.html", status_code=302)
-
-async def auth(request: Request):
-    form = await request.form()
-    login = form.get("login")
-    password = form.get("password")
-
-    async with SessionLocal() as session:
-        async with session.begin():
-            result = await session.execute(
-                select(User).filter(User.login == login)
-            )
-            user = result.scalar_one_or_none()
-
-    if user and verify_password(password, user.password):
-        token = create_access_token(data={"sub": user.user_id})
-        response = RedirectResponse(url="/LK.html", status_code=302)
-        response.set_cookie(key="access_token", value=token, httponly=True)
-        return response
-
-    return templates.TemplateResponse("auth.html", {"request": request, "error": "Неверные данные"}, status_code=401)
-
-@requires("authenticated")
 async def create_task(request: Request):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return RedirectResponse(url="/auth.html", status_code=302)
+    
     form_data = await request.form()
     heading = form_data.get("heading")
     task_text = form_data.get("task_text")
-    user_id = int(request.user.username)
 
     async with SessionLocal() as session:
         async with session.begin():
@@ -96,14 +59,14 @@ async def create_task(request: Request):
             session.add(task)
             await session.commit()
 
-    # Перенаправление на страницу с текущими задачами после создания задачи
-    return HTMLResponse(f'<script>window.location.href = "/LK.html";</script>', status_code=200)
+    return RedirectResponse(url="/LK.html", status_code=303)
 
-@requires("authenticated")
-async def get_task_by_id(request):
+async def get_task_by_id(request: Request):
     task_id = int(request.path_params["task_id"])
-    user_id = request.user.username
-   
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return RedirectResponse(url="/auth.html", status_code=302)
+
     async with SessionLocal() as session:
         async with session.begin():
             result = await session.execute(
@@ -116,11 +79,12 @@ async def get_task_by_id(request):
     else:
         return JSONResponse({"error": "Task not found"}, status_code=404)
 
-@requires("authenticated")
 async def edit_task(request: Request):
     task_id = int(request.path_params["task_id"])
-    user_id = int(request.user.username)
-    
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return RedirectResponse(url="/auth.html", status_code=302)
+
     async with SessionLocal() as session:
         async with session.begin():
             task = await session.get(Task, task_id)
@@ -135,14 +99,13 @@ async def edit_task(request: Request):
             else:
                 return JSONResponse({"error": "Task not found or you don't have access"}, status_code=404)
 
-from starlette.responses import RedirectResponse
-
-@requires("authenticated")
 async def update_task(request: Request):
-    user_id = int(request.user.username)
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return RedirectResponse(url="/auth.html", status_code=302)
+    
     task_id = int(request.path_params["task_id"])
 
-    # Парсинг данных из запроса
     form_data = await request.form()
     heading = form_data.get("heading")
     task_text = form_data.get("task_text")
@@ -160,23 +123,22 @@ async def update_task(request: Request):
             else:
                 return JSONResponse({"error": "Task not found or you don't have access"}, status_code=404)
 
-@requires("authenticated")
-async def delete_task(request):
+async def delete_task(request: Request):
     task_id = int(request.path_params["task_id"]) 
-    user_id = request.user.username 
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return RedirectResponse(url="/auth.html", status_code=302)
 
     async with SessionLocal() as session:
         async with session.begin():
-            #точно ли задача текущего пользователя?
             result = await session.execute(
                 select(Task).filter(Task.task_id == task_id, Task.user_id == user_id)
             )
             task = result.scalar_one_or_none()
             
             if task is None:
-                return JSONResponse({"error": "Задача не найдена"}, status_code=404)
+                return JSONResponse({"error": "Task not found"}, status_code=404)
 
-            # Удаляем задачу
             await session.delete(task)
             await session.commit()
 

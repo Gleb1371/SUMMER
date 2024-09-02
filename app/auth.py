@@ -1,62 +1,58 @@
-from datetime import datetime, timedelta
-import jwt
 from passlib.context import CryptContext
-from starlette.authentication import AuthenticationBackend, AuthCredentials, SimpleUser, UnauthenticatedUser
 from starlette.requests import Request
-from datetime import timezone
+from starlette.responses import RedirectResponse
+from sqlalchemy.future import select
+from .models import User
+from .database import SessionLocal
+from starlette.templating import Jinja2Templates
 
-SECRET_KEY = "PRAKTIKA2024"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 3000
-
+# Конфигурация для работы с паролями
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
-#получаем хэш пароль
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-#токен
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=1000)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+# Инициализация шаблонов
+templates = Jinja2Templates(directory="app/templates")
 
-#извлекаем инф из токена досутпа
-def decode_access_token(token: str):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
-        return None
+async def registration(request: Request):
+    form = await request.form()
+    login = form.get("login")
+    password = form.get("password")
 
-class JWTAuthenticationBackend(AuthenticationBackend):
-    async def authenticate(self, request: Request):
-        # Извлекаем токен из cookies
-        token = request.cookies.get("access_token")
-        
-        if not token:
-            return AuthCredentials(), UnauthenticatedUser()
+    async with SessionLocal() as session:
+        async with session.begin():
+            result = await session.execute(select(User).filter(User.login == login))
+            existing_user = result.scalars().first()
 
-        # Проверяем токен
-        try:
-            payload = decode_access_token(token)
-        except Exception as e:
-            print(f"Ошибка декодирования токена: {e}")
-            return AuthCredentials(), UnauthenticatedUser()
+            if existing_user:
+                return templates.TemplateResponse("regis.html", {"request": request, "error": "Пользователь с таким логином уже зарегистрирован!"})
 
-        if payload is None:
-            return AuthCredentials(), UnauthenticatedUser()
+            user = User(login=login, password=get_password_hash(password))
+            session.add(user)
+            await session.commit()
 
-         
-        return AuthCredentials(["authenticated"]), SimpleUser(payload["sub"])
-    
+    return RedirectResponse(url="/index.html", status_code=302)
+
+async def auth(request: Request):
+    form = await request.form()
+    login = form.get("login")
+    password = form.get("password")
+
+    async with SessionLocal() as session:
+        async with session.begin():
+            result = await session.execute(select(User).filter(User.login == login))
+            user = result.scalar_one_or_none()
+
+    if user and verify_password(password, user.password):
+        request.session["user_id"] = user.user_id  # Установка сессии после успешной авторизации
+        return RedirectResponse(url="/LK.html", status_code=302)
+
+    return templates.TemplateResponse("auth.html", {"request": request, "error": "Неверные данные"}, status_code=401)
+
+async def logout(request: Request):
+    request.session.clear()  # Очистка сессии
+    return RedirectResponse(url="/index.html", status_code=302)
