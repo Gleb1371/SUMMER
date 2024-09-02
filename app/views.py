@@ -39,13 +39,9 @@ async def edit_page(request: Request):
     return templates.TemplateResponse("edit.html", {"request": request})
 
 async def registration(request: Request):
-    data = await request.json()
-    
-    login = data.get("login")
-    password = data.get("password")
-
-    if not login or not password:
-        return JSONResponse({"error": "Логин и пароль обязательны!"}, status_code=400)
+    form = await request.form()
+    login = form.get("login")
+    password = form.get("password")
 
     async with SessionLocal() as session:
         async with session.begin():
@@ -55,28 +51,33 @@ async def registration(request: Request):
             existing_user = result.scalars().first()
 
             if existing_user:
-                return JSONResponse({"error": "Пользователь с таким логином уже зарегистрирован!"}, status_code=400)
+                return templates.TemplateResponse("regis.html", {"request": request, "error": "Пользователь с таким логином уже зарегистрирован!"})
 
-            user = User(
-                login=login, password=get_password_hash(password)
-            )
+            user = User(login=login, password=get_password_hash(password))
             session.add(user)
             await session.commit()
 
-            return JSONResponse({"message": "Регистрация прошла успешно."})
+    return RedirectResponse(url="/index.html", status_code=302)
 
-async def auth(request):
-    data = await request.json()
+async def auth(request: Request):
+    form = await request.form()
+    login = form.get("login")
+    password = form.get("password")
+
     async with SessionLocal() as session:
         async with session.begin():
             result = await session.execute(
-                select(User).filter(User.login == data["login"])
+                select(User).filter(User.login == login)
             )
             user = result.scalar_one_or_none()
-    if user and verify_password(data["password"], user.password):
+
+    if user and verify_password(password, user.password):
         token = create_access_token(data={"sub": user.user_id})
-        return JSONResponse({"access_token": token}, status_code=200)
-    return JSONResponse({"error": "Неправильные данные"}, status_code=401)
+        response = RedirectResponse(url="/LK.html", status_code=302)
+        response.set_cookie(key="access_token", value=token, httponly=True)
+        return response
+
+    return templates.TemplateResponse("auth.html", {"request": request, "error": "Неверные данные"}, status_code=401)
 
 @requires("authenticated")
 async def create_task(request: Request):
